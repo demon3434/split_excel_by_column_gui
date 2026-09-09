@@ -1,10 +1,38 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
+import sys
+from pathlib import Path
 
+conda_bin = Path(sys.base_prefix) / 'Library' / 'bin'
+if conda_bin.exists():
+    os.environ['PATH'] = str(conda_bin) + os.pathsep + os.environ.get('PATH', '')
+
+extra_binaries = []
+if conda_bin.exists():
+    for dll_name in [
+        'tcl86t.dll',
+        'tk86t.dll',
+        'libcrypto-3-x64.dll',
+        'libssl-3-x64.dll',
+        'libexpat.dll',
+        'ffi.dll',
+        'liblzma.dll',
+        'LIBBZ2.dll',
+        'libmpdec-4.dll',
+        'vcruntime140.dll',
+        'vcruntime140_1.dll',
+        'msvcp140.dll',
+    ]:
+        p = conda_bin / dll_name
+        if not p.exists():
+            p = Path(sys.base_prefix) / dll_name
+        if p.exists():
+            extra_binaries.append((str(p), '.'))
 
 a = Analysis(
-    ['Excel按列号拆分(GUI).py'],
-    pathex=[],
-    binaries=[],
+    ['split_excel_by_column_gui.py'],
+    pathex=[str(conda_bin)] if conda_bin.exists() else [],
+    binaries=extra_binaries,
     datas=[('logo2.png', '.')],
     hiddenimports=[],
     hookspath=[],

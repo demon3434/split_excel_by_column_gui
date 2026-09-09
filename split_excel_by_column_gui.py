@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 import threading
 import time
@@ -47,6 +47,7 @@ class Splitter:
         output_dir,
         logger,
         apply_first_row_format=True,
+        create_subfolders=False,
     ):
         self.file_path = file_path
         self.sheet_name = sheet_name
@@ -56,6 +57,7 @@ class Splitter:
         self.output_dir = Path(output_dir)
         self.log = logger
         self.apply_first_row_format = apply_first_row_format
+        self.create_subfolders = create_subfolders
 
     def run(self):
         task_start_wall = datetime.now()
@@ -93,7 +95,14 @@ class Splitter:
         stage_start = time.perf_counter()
         self.log("阶段[拆分输出] 开始")
         for i, (key, rows) in enumerate(groups.items(), start=1):
-            self.log(f"({i}/{total}) {key} -> {len(rows)} 行")
+            sub_key_name = safe_name(key)
+            if self.create_subfolders:
+                target_dir = output_dir / sub_key_name
+                target_dir.mkdir(parents=True, exist_ok=True)
+                self.log(f"({i}/{total}) {key} -> {len(rows)} 行 (子目录: {sub_key_name})")
+            else:
+                target_dir = output_dir
+                self.log(f"({i}/{total}) {key} -> {len(rows)} 行")
 
             wb = Workbook()
             ws = wb.active
@@ -106,8 +115,8 @@ class Splitter:
                     if self.apply_first_row_format and col_idx <= len(data_number_formats):
                         cell.number_format = data_number_formats[col_idx - 1]
 
-            file_name = f"【{safe_name(key)}】{self.output_base_name}.xlsx"
-            wb.save(output_dir / file_name)
+            file_name = f"【{sub_key_name}】{self.output_base_name}.xlsx"
+            wb.save(target_dir / file_name)
 
         self.log(f"阶段[拆分输出] 完成，耗时 {time.perf_counter() - stage_start:.2f} 秒")
         self.log(f"完成，输出目录: {output_dir}")
@@ -255,6 +264,7 @@ class App(BaseTk):
         self.name_var = tk.StringVar()
         self.output_dir_var = tk.StringVar(value=str(self._default_output_dir()))
         self.apply_first_row_format_var = tk.BooleanVar(value=True)
+        self.create_subfolders_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="就绪")
 
         self.columns_map = {}
@@ -297,28 +307,38 @@ class App(BaseTk):
         self.pick_btn.grid(row=0, column=6, padx=(6, 0), pady=3, sticky=tk.EW)
 
         ttk.Label(self.form, text="工作表").grid(row=1, column=0, sticky=tk.W, padx=(0, 6), pady=3)
+        self.row1_frame = ttk.Frame(self.form)
+        self.row1_frame.grid(row=1, column=1, columnspan=6, sticky=tk.W, pady=3)
+
         self.sheet_combo = ttk.Combobox(
-            self.form, textvariable=self.sheet_var, width=12, state="readonly", style="Compact.TCombobox"
+            self.row1_frame, textvariable=self.sheet_var, width=12, state="readonly", style="Compact.TCombobox"
         )
-        self.sheet_combo.grid(row=1, column=1, sticky=tk.W, padx=(0, 0), pady=3)
+        self.sheet_combo.pack(side=tk.LEFT, padx=(0, 10))
         self.sheet_combo.bind("<<ComboboxSelected>>", self._on_sheet_changed)
 
-        ttk.Label(self.form, text="表头行号").grid(row=1, column=2, sticky=tk.W, padx=(12, 6), pady=3)
-        self.header_row_entry = ttk.Entry(self.form, textvariable=self.header_row_var, width=8, style="Compact.TEntry")
-        self.header_row_entry.grid(row=1, column=3, sticky=tk.W, padx=(0, 0), pady=3)
+        ttk.Label(self.row1_frame, text="表头行号").pack(side=tk.LEFT, padx=(0, 4))
+        self.header_row_entry = ttk.Entry(self.row1_frame, textvariable=self.header_row_var, width=5, style="Compact.TEntry")
+        self.header_row_entry.pack(side=tk.LEFT, padx=(0, 10))
         self.header_row_entry.bind("<FocusOut>", self._on_header_row_changed)
         self.header_row_entry.bind("<Return>", self._on_header_row_changed)
 
-        ttk.Label(self.form, text="拆分列").grid(row=1, column=4, sticky=tk.W, padx=(12, 6), pady=3)
+        ttk.Label(self.row1_frame, text="拆分列").pack(side=tk.LEFT, padx=(0, 4))
         self.col_combo = ttk.Combobox(
-            self.form, textvariable=self.column_var, width=24, state="readonly", style="Compact.TCombobox"
+            self.row1_frame, textvariable=self.column_var, width=20, state="readonly", style="Compact.TCombobox"
         )
-        self.col_combo.grid(row=1, column=5, sticky=tk.W, padx=(0, 0), pady=3)
+        self.col_combo.pack(side=tk.LEFT, padx=(0, 6))
 
         self.refresh_btn = ttk.Button(
-            self.form, text="刷新", width=8, style="Compact.TButton", command=self._refresh_columns_by_header_row
+            self.row1_frame, text="刷新", width=6, style="Compact.TButton", command=self._refresh_columns_by_header_row
         )
-        self.refresh_btn.grid(row=1, column=6, padx=(6, 0), pady=3, sticky=tk.EW)
+        self.refresh_btn.pack(side=tk.LEFT, padx=(0, 14))
+
+        self.create_subfolders_chk = ttk.Checkbutton(
+            self.row1_frame,
+            text="按拆分值建子目录",
+            variable=self.create_subfolders_var,
+        )
+        self.create_subfolders_chk.pack(side=tk.LEFT)
 
         ttk.Label(self.form, text="拆分后文件名").grid(row=2, column=0, sticky=tk.W, padx=(0, 6), pady=3)
         self.name_entry = ttk.Entry(self.form, textvariable=self.name_var, style="Compact.TEntry", width=24)
@@ -596,6 +616,7 @@ class App(BaseTk):
                     output_dir=output_dir,
                     logger=lambda msg: self.log_queue.put(("log", msg)),
                     apply_first_row_format=self.apply_first_row_format_var.get(),
+                    create_subfolders=self.create_subfolders_var.get(),
                 )
                 out_dir = splitter.run()
                 self.log_queue.put(("split_success", str(out_dir)))
@@ -686,6 +707,7 @@ class App(BaseTk):
         self.output_dir_entry.configure(state="disabled")
         self.pick_output_btn.configure(state=tk.DISABLED)
         self.apply_first_row_format_chk.configure(state=tk.DISABLED)
+        self.create_subfolders_chk.configure(state=tk.DISABLED)
         self.progress.start(10)
 
     def _set_idle(self, text):
@@ -700,6 +722,7 @@ class App(BaseTk):
         self.output_dir_entry.configure(state="normal")
         self.pick_output_btn.configure(state=tk.NORMAL)
         self.apply_first_row_format_chk.configure(state=tk.NORMAL)
+        self.create_subfolders_chk.configure(state=tk.NORMAL)
         self.progress.stop()
 
     def _on_form_resize(self, event):
@@ -721,6 +744,7 @@ class App(BaseTk):
             self.sheet_combo.winfo_reqheight(),
             self.header_row_entry.winfo_reqheight(),
             self.col_combo.winfo_reqheight(),
+            self.create_subfolders_chk.winfo_reqheight(),
         )
         row2_h = max(self.name_entry.winfo_reqheight(), self.apply_first_row_format_chk.winfo_reqheight())
         total_h = row0_h + row1_h + row2_h + 12  # include row paddings
@@ -737,20 +761,20 @@ class App(BaseTk):
     def _apply_compact_layout(self, compact):
         if compact:
             self.sheet_combo.configure(width=9)
-            self.col_combo.configure(width=18)
-            self.header_row_entry.configure(width=6)
+            self.col_combo.configure(width=16)
+            self.header_row_entry.configure(width=4)
             self.file_entry.configure(width=44)
             self.name_entry.configure(width=44)
             self.pick_btn.configure(width=7)
-            self.refresh_btn.configure(width=7)
+            self.refresh_btn.configure(width=5)
         else:
             self.sheet_combo.configure(width=12)
-            self.col_combo.configure(width=24)
-            self.header_row_entry.configure(width=8)
+            self.col_combo.configure(width=20)
+            self.header_row_entry.configure(width=5)
             self.file_entry.configure(width=56)
             self.name_entry.configure(width=56)
             self.pick_btn.configure(width=8)
-            self.refresh_btn.configure(width=8)
+            self.refresh_btn.configure(width=6)
 
     def _resolve_logo_path(self):
         candidates = []
